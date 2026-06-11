@@ -34,11 +34,7 @@ export async function submitContactForm(formData: FormData) {
         return { success: false, error: "Please enter a valid email address." };
     }
 
-    // Store lead as JSON file (MVP — replace with DB/CRM later)
     try {
-        const leadsDir = join(process.cwd(), "leads");
-        await mkdir(leadsDir, { recursive: true });
-
         // === SCORING ENGINE ===
         let score = 0;
         const scoringBreakdown: string[] = [];
@@ -85,9 +81,6 @@ export async function submitContactForm(formData: FormData) {
         if (score >= 70) tier = "HOT";
         else if (score >= 40) tier = "WARM";
 
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const filename = `lead_${timestamp}_${data.company.replace(/\s+/g, "_")}_${tier}.json`;
-
         const lead = {
             ...data,
             submittedAt: new Date().toISOString(),
@@ -99,7 +92,16 @@ export async function submitContactForm(formData: FormData) {
             }
         };
 
-        await writeFile(join(leadsDir, filename), JSON.stringify(lead, null, 2));
+        // Store lead as JSON file (safe fallback for serverless read-only filesystems)
+        try {
+            const leadsDir = join(process.cwd(), "leads");
+            await mkdir(leadsDir, { recursive: true });
+            const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+            const filename = `lead_${timestamp}_${data.company.replace(/\s+/g, "_")}_${tier}.json`;
+            await writeFile(join(leadsDir, filename), JSON.stringify(lead, null, 2));
+        } catch (fsError) {
+            console.warn("Local filesystem write skipped (expected on read-only serverless platforms):", fsError);
+        }
 
         // Background integrations (do not block the user response)
         try {
